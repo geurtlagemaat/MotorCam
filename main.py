@@ -2,9 +2,10 @@
 # -*- coding: latin-1 -*-
 import ConfigParser
 import logging
-
+from camDisplay import CamDisplay
+from camGPS import GPSData
 import time, sys
-from includes.text import Text
+import picamera
 
 try:
     from cloghandler import ConcurrentRotatingFileHandler as RFHandler
@@ -15,24 +16,17 @@ except ImportError:
     from logging.handlers import RotatingFileHandler as RFHandler
     ConcurrentLogHandler = False
 
-from PIL import Image
-
-import spidev as SPI
-from includes.epd import Epd
-from includes.progressbar import ProgressBar
-from includes.icon import Icon
-
-DISPLAY_TYPE = "EPD_1X54"
-WHITE = 1
-BLACK = 0
-
 logger = logging.getLogger(__name__)
 eDisplay = None
 nodeProps = None
+gpsData =  None
 
 def setup(propertiesfile):
     if len(sys.argv) == 2 and sys.argv[1].lower() == '-v':
         logging.basicConfig(level=logging.DEBUG)
+    eDisplay = CamDisplay()
+    eDisplay.startProgressBar(2)
+    eDisplay.updateProgressBar()
     nodeProps = ConfigParser.ConfigParser()
     nodeProps.read(propertiesfile)
 
@@ -71,41 +65,16 @@ def setup(propertiesfile):
         "%(asctime)s %(levelname)-8s %(process)-5d [%(module)s.%(funcName)s:%(lineno)d] %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+    eDisplay.updateProgressBar()
     logger.info("Bliknet MotorCam config")
+    gpsData = GPSData()
+    camera = picamera.PiCamera()
+    camera.resolution = (640, 480)
+    # camera.start_recording('/mnt/videodrive/my_video.h264')
+    # camera.wait_recording(10)
+    # camera.stop_recording()
+    eDisplay.systemUp = True
 
-    try:
-        spi = SPI.SpiDev(0, 0)
-        eDisplay = Epd(spi, DISPLAY_TYPE)
-
-        # Init and clear part screen
-        eDisplay.clearDisplayPart()
-        eDisplay.showString(40, 80, "BLIKNET MOTORCAM", "Font16")
-
-        progress = ProgressBar(eDisplay, 10)
-        for i in range(0, 10):
-            progress.showProgress(i)
-        eDisplay.clearDisplayPart()
-
-        image = Image.new('1', eDisplay.size, WHITE)
-
-        Icon(image, 'icons_48-48/check.png', xstart=14, ystart=0)
-        Icon(image, 'icons_48-48/usb.png', xstart=76, ystart=0)
-        Icon(image, 'icons_48-48/rotating.png', xstart=138, ystart=0)
-
-        height, width = eDisplay.size
-        tempText = Text(width, height, "28.5°", chars=24)
-        image.paste(tempText.image, (5, 120), mask=BLACK)
-        tempText = Text(width, height, "3208m", chars=24)
-        image.paste(tempText.image, (30, 120), mask=BLACK)
-        Icon(image, 'icons_48-48/thermometer.png', xstart=14, ystart=65)
-
-        Icon(image, 'icons_48-48/happy.png', xstart=138, ystart=65)
-        Icon(image, 'icons_48-48/gps.png', xstart=138, ystart=130)
-
-        eDisplay.showImageFull(eDisplay.imageToPixelArray(image))
-    except Exception, e:
-        print e
-        logger.error('Error Display init: ', exc_info=True)
 
 def main():
     setup('settings/motorcam.properties')
