@@ -6,97 +6,60 @@ import threading
 logger = logging.getLogger(__name__)
 import pytz
 import datetime
+from datetime import datetime
 
-local_tz = pytz.timezone('Europe/Amsterdam')
-
-gpsd = None # gps deamon
-gpsp = None # poller instance
-
-class GPSPoller(threading.Thread):
-    def __init__(self, updateGPSDataHandler):
+class GPSController(threading.Thread):
+    def __init__(self, nodeProps):
         threading.Thread.__init__(self)
-        global gpsd  # bring it in scope
-        self._updateGPSDataHandler = updateGPSDataHandler
-        gpsd = gps(mode=WATCH_ENABLE)  # starting the stream of info
-        self.current_value = None
-        self.running = True
+        self._timezone = None
+        if nodeProps.has_option('localize', 'timezone'):
+            self._timezone = nodeProps.get('localize', 'timezone')
+        # self._gpsd = gps(mode=WATCH_ENABLE)
+        self._gpsd = gps("localhost", "2947")
+        self._gpsd.stream(WATCH_ENABLE | WATCH_NEWSTYLE)
+        self._running = False
 
     def run(self):
-        global gpsd
-        while gpsp.running:
-            gpsd.next()  # grab EACH set of gpsd info to clear the buffer
-            self._updateGPSDataHandler(gpsd)
-            logger.debug(gpsd.fix)
+        self._running = True
+        while self._running:
+            self._gpsd.next()  # grab EACH set of gpsd info to clear the buffer
 
-class GPSData(object):
-    def __init__(self):
-        self._gpsFix = None
-        self._time = None
-        self._utcTime = None
-        self.startGPS()
-
-    def startGPS(self):
-        global gpsp
-        gpsp = GPSPoller(self._updateGPSDataHandler)  # create the thread
-        try:
-            gpsp.start()
-        except Exception, e:
-            print e
-            gpsp.running = False
-            gpsp.join()
-
-    def stopGPS(self):
-        gpsp.running = False
-        gpsp.join()
+    def stopController(self):
+        self._running = False
 
     @property
     def gpsFix(self):
-        return self._gpsFix
+        return self._gpsd.fix
 
     @property
-    def latitude(self):
-        return self._latitude
+    def satellites(self):
+        return self._gpsd.satellites
 
     @property
-    def longitude(self):
-        return self._longitude
+    def utc(self):
+        return self._gpsd.utc
 
     @property
-    def altitude(self):
-        return self._altitude
+    def localDateTime(self):
+        try:
+            if self._gpsd.fix.mode != 1:
+                UTCTime = time.strptime(elf._gpsd.utc, "%Y-%m-%dT%H:%M:%S.%fz")
+                tmp = datetime.fromtimestamp(time.mktime(UTCTime))
+                return self._datetime_from_utc_to_local(tmp)
+        except:
+            return None
 
     @property
-    def speed(self):
-        return self._speed
+    def gpsReady(self):
+        return self._gpsd.fix.mode != 1
 
-    @property
-    def climb(self):
-        return self._climb
-
-    @property
-    def track(self):
-        return self._track
-
-    @property
-    def time(self):
-        return self._time
-
-    @property
-    def utcTime(self):
-        return self._utcTime
-
-    def _updateGPSDataHandler(self, myGpsd):
-        self._gpsFix = (myGpsd.fix.latitude is not NaN and \
-                        myGpsd.fix.latitude != 0.0 and\
-                        myGpsd.fix.longitude is not NaN and\
-                        myGpsd.fix.longitude != 0.0)
-        if self._gpsFix:
-            self._latitude = myGpsd.fix.latitude
-            self._longitude = myGpsd.fix.longitude
-            self._altitude = myGpsd.fix.altitude
-            self._speed = myGpsd.fix.speed * MPS_TO_KPH
-            self._climb = myGpsd.fix.climb
-            self._track = myGpsd.fix.track
-            self._time = myGpsd.fix.time
-            self._utcTime = myGpsd.utc
-            self._localDateTime = "TODO!" # TODO!
+    def _datetime_from_utc_to_local(self, utc_datetime):
+        if self._timezone is not None:
+            try:
+                return pytz.utc.localize(utc_datetime, is_dst=None).astimezone(self._timezone)
+            except Exception, e:
+                logger.error('Error converting UTC to local date time: ', exc_info=True)
+                return None
+        else:
+            logger.error('No timezone set, returning UTC date/time. ')
+            return utc_datetime

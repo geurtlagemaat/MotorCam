@@ -2,8 +2,9 @@
 # -*- coding: latin-1 -*-
 import ConfigParser
 import logging
-from camDisplay import CamDisplay
-from camGPS import GPSData
+from camDisplay import DisplayController
+from camGPS import GPSController
+from camBME280 import BME280Controller
 import time, sys
 import picamera
 
@@ -24,9 +25,7 @@ gpsData =  None
 def setup(propertiesfile):
     if len(sys.argv) == 2 and sys.argv[1].lower() == '-v':
         logging.basicConfig(level=logging.DEBUG)
-    eDisplay = CamDisplay()
-    eDisplay.startProgressBar(2)
-    eDisplay.updateProgressBar()
+
     nodeProps = ConfigParser.ConfigParser()
     nodeProps.read(propertiesfile)
 
@@ -65,15 +64,31 @@ def setup(propertiesfile):
         "%(asctime)s %(levelname)-8s %(process)-5d [%(module)s.%(funcName)s:%(lineno)d] %(message)s")
     handler.setFormatter(formatter)
     logger.addHandler(handler)
+
+    eDisplay = DisplayController(nodeProps)
+    eDisplay.startProgressBar(2)
+    eDisplay.updateProgressBar()
     eDisplay.updateProgressBar()
     logger.info("Bliknet MotorCam config")
-    gpsData = GPSData()
+
+    gpsContr = GPSController(nodeProps)
+    bme280Contr = BME280Controller(nodeProps)
+
     camera = picamera.PiCamera()
-    camera.resolution = (640, 480)
+    # TODO read settings for camera
+    # TODO create Button thread
+    # camera.resolution = (640, 480)
     # camera.start_recording('/mnt/videodrive/my_video.h264')
     # camera.wait_recording(10)
     # camera.stop_recording()
+    eDisplay.bme280Controller = bme280Contr
+    eDisplay.gpsController = gpsContr
+    gpsContr.start()
+    bme280Contr.start()
     eDisplay.systemUp = True
+    eDisplay.start()
+    while True:
+        pass
 
 
 def main():
